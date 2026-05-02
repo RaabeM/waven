@@ -12,7 +12,7 @@ from .suite2p.utils import utils as utils
 from skimage import transform
 
 import matplotlib
-matplotlib.use('TkAgg')
+# matplotlib.use('TkAgg')
 
 import os
 import gc
@@ -1048,7 +1048,7 @@ def coarseWavelet(path, downsampling, nx0=135, ny0=54, nx=27, ny=11,no=8,ns=6, n
     If cannot find the wavelets decomposition and downsampling, it will run it
 
     Parameters:
-        Path: patn to the wavelet decomposition diretory.
+        Path: path to the wavelet decomposition diretory.
         downsampling (bool): default False
         NX0 (int): number of azimuth positions (pix) (x shape of the downsampled stimuli).
     	NY0 (int): number of elevation positions (pix) (y shape of the downsampled stimuli).
@@ -1060,7 +1060,7 @@ def coarseWavelet(path, downsampling, nx0=135, ny0=54, nx=27, ny=11,no=8,ns=6, n
     	chunk_size: for computational effisciency. 1000 is in geenral a good value
 
     Returns:
-        the coarse wavvelet decomposition (cosin, sine, cos^2 +sin^2)
+        the coarse wavelet decomposition (cosin, sine, cos^2 +sin^2)
     """
     print('loading wavelets...')
     if os.path.exists(os.path.join(path, 'dwt_downsampled_videodata.npy')):

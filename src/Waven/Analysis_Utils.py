@@ -11,7 +11,7 @@ import os
 from skimage import transform
 import pickle
 import matplotlib
-matplotlib.use('TkAgg')
+# matplotlib.use('TkAgg')
 from scipy.stats import pearsonr
 import torch
 from scipy import signal
@@ -129,23 +129,24 @@ def orientation_correction_for_stretches(visual_coverage, nx, ny, omax):
     corrected_ori[np.asarray(corrected_ori<0).nonzero()[0]]=corrected_ori[corrected_ori<0]+180
     return corrected_ori
 
-def PearsonCorrelationPinkNoise(stim, resp, neuron_pos,  nx, ny, ns, visual_coverage, screen_ratio, sigmas, fil=[0], absolute=False,  plotting=False):
+def PearsonCorrelationPinkNoise(stim, resp, neuron_pos,  nx, ny, n_thetas, ns, n_frequencies, visual_coverage, screen_ratio, sigmas, fil=[0], absolute=False,  plotting=False):
     """
     Runs Pearson corrrlation between the wavelet decomposition and the neurons spikes
 
     Parameters:
         stim (array-like): complexe wavelet decomposition shape (n_timepoints, n_features).
-        resp (array-like): mean neural response to the stimulus shaoe(n_timepoints, n_neurons)
+        resp (array-like): mean neural response to the stimulus with shape(n_timepoints, n_neurons)
         neuron_pos (array_like):, neuron position shape(n_neurons, n_dim)
         nx: coarse nb of azimuth position (default 27)
-        ny: coarse nb of elevation positon (default 11)
+        ny: coarse nb of elevation positon (default 11) 
         ns: coarse number of sizes
         analysis Coverage (list): [azimuth left, azimuth right, elevation top , elevation bottom] in visual degree.
         screen_ratio:  abs(visual_coverage[0]-visual_coverage[1])/nx
-        Sigmas (list): standart deviation of theb gabor filters expressed in pixels (radius of the gaussian half peak wigth).
+        Sigmas (list): standart deviation of theb gabor filters expressed in pixels (radius of the gaussian half peak width).
 
     Returns:
-        tuple : (receptive field matrix (nb_neurons * nx, ny, no, ns), best gabor params for each neurons (list shape 4(nx, ny, no, ns)* nb_neurons), best gabor with units in visual degree, max values array)
+        tuple : (receptive field matrix (nb_neurons * nx, ny, no, ns), 
+            best gabor params for each neurons (list shape 4(nx, ny, no, ns)* nb_neurons), best gabor with units in visual degree, max values array)
     """
     try:
         # cc_f_1 = torch.corrcoef(torch.Tensor(np.concatenate((np.abs(stim.reshape(stim.shape[0], -1)).T, resp.T),axis=0).astype('float16')).cuda())  # , dtype='float16')
@@ -168,7 +169,7 @@ def PearsonCorrelationPinkNoise(stim, resp, neuron_pos,  nx, ny, ns, visual_cove
     #     resp = torch.Tensor(resp)
     #     cc_f_1 = torch.corrcoef(
     #         torch.Tensor(torch.concatenate((stim.reshape(stim.shape[0], -1).T, resp.T), axis=0)).cuda())
-    print(cc_f_1.shape)
+    print('cc_f_1', cc_f_1.shape)
     cc_f_1 = cc_f_1.detach().cpu().numpy()
     if absolute:
         cc_f_1 = abs(cc_f_1)
@@ -176,7 +177,7 @@ def PearsonCorrelationPinkNoise(stim, resp, neuron_pos,  nx, ny, ns, visual_cove
     rfs = rfs - (rfs >= 0.99).astype('float16')
     rfs = np.nan_to_num(rfs)
     print(rfs.shape)
-    rfs = rfs.reshape(rfs.shape[0], nx, ny, 8, ns)#9,3
+    rfs = rfs.reshape(rfs.shape[0], nx, ny, n_thetas, ns, n_frequencies)
     # rfs = rfs[:, :, :, :-1, :]
     # rfssum = rfs.sum(axis=4)
 
@@ -203,9 +204,6 @@ def PearsonCorrelationPinkNoise(stim, resp, neuron_pos,  nx, ny, ns, visual_cove
     smax_corr=sigmas[smax.astype(int)]
     maxe_corr=[xmax_corr, ymax_corr, omax_corr, smax_corr]
     if plotting:
-
-
-
         if np.sum(fil)==0:
             plt.figure()
             plt.rcParams['axes.facecolor']='none'
@@ -2602,7 +2600,7 @@ def PredictNeuronsTest(wt_test, spks, idx, ncut, dt1=9000, func=relu):
     plt.plot(np.mean(spk, axis=0))
 
 
-def PlotTuningCurve(rfs, idx, visual_coverage, sigmas, screen_ratio, show=True):
+def PlotTuningCurve(rfs, idx, visual_coverage, sigmas, thetas, screen_ratio, show=True, fig=None, ax=None):
     xM, xm, yM, ym = visual_coverage
     cc_f_1_xy=rfs[0][idx, :, :, np.array(rfs[1])[2, idx], np.array(rfs[1])[3, idx]]
     cc_f_1_o=rfs[0][idx,np.array(rfs[1])[0, idx], np.array(rfs[1])[1, idx], :, :]
@@ -2610,13 +2608,17 @@ def PlotTuningCurve(rfs, idx, visual_coverage, sigmas, screen_ratio, show=True):
     o = np.array(rfs[1])[2, idx]
 
     u, s__, v = svds(cc_f_1_xy, 2)
-    ori_tun = np.append(cc_f_1_o[:, s], cc_f_1_o[0, s])
+    # ori_tun = np.append(cc_f_1_o[:, s], cc_f_1_o[0, s])
+    ori_tun = cc_f_1_o[:, s]
+
     i = 1
     if v[1][np.argmax(abs(v[1]))] < 0:
         i = -1
     if show:
-        fig, ax = plt.subplots(1, 5, figsize=(15, 1.5))
-        m=ax[0].imshow(cc_f_1_xy.T, cmap='coolwarm')
+        if type(ax)==type(None):
+            fig, ax = plt.subplots(1, 5, figsize=(15, 1.5))
+  
+        m=ax[0].imshow(cc_f_1_xy.T, cmap='coolwarm', vmin=-np.abs(cc_f_1_o).max(), vmax=np.abs(cc_f_1_o).max())
         fig.colorbar(m)
         ax[0].set_xticks([0 , cc_f_1_xy.shape[0]], [xM, xm])
         ax[0].set_yticks([0, cc_f_1_xy.shape[1]], [yM, ym])
@@ -2632,8 +2634,8 @@ def PlotTuningCurve(rfs, idx, visual_coverage, sigmas, screen_ratio, show=True):
         # ax[1].plot(cc_f_1_xy[x, :])
         mm = max(cc_f_1_o.min(), cc_f_1_o.max(), key=abs)
 
-        ax[3].plot(ori_tun, 'o-', c='k')
-        ax[3].set_xticks([0, 4, 8], [0,90, 180])
+        ax[3].plot(thetas, ori_tun, 'o-', c='k')
+        ax[3].set_xticks(thetas, np.rad2deg(thetas))
         ax[3].set_title('Orientation (deg)')
         # ax[3].set_ylim(bottom=0)
         # if mm<=0:

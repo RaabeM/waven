@@ -1,7 +1,8 @@
 """
 Created on Wed Mar 25 19:31:32 2025
-
 @author: Sophie Skriabine
+
+Edited by Marcel C. Raabe
 """
 import numpy as np
 import matplotlib.pyplot as plt
@@ -10,24 +11,45 @@ import scipy.io as sio
 import skimage
 from skimage import transform
 import os
-import matplotlib
-matplotlib.use('TkAgg')
+# import matplotlib
+# matplotlib.use('TkAgg')
 from skimage.measure import block_reduce
 import cv2
 import gc
 import torch
 
 from skimage.filters import gabor_kernel
+# import itertools
+
+from tqdm import tqdm
+from numba import jit 
 
 
+def makeGaborFilter(i, j, angle, sigma, phase, frequency=None, lx=54, ly=135, plot=False)->np.ndarray:
+    """
+    creates a gabor filter of size (lx, ly) with a gabor kernel centered on (i, j) with the given parameters
 
+    Parameters:
+        i (int): x position of the gabor kernel center in the filter (azimuth position in pixels).
+        j (int): y position of the gabor kernel center in the filter (elevation position in pixels).
+        angle (float): orientation of the gabor kernel in radians.
+        sigma (float): standard deviation of the gaussian envelope of the gabor kernel in pixels (radius of the gaussian half peak wigth).
+        phase (float): phase of the gabor kernel in radians.
+        frequency (float): spatial frequency of the gabor kernel in pixels per cycle.
+        lx (int): size of the filter in x direction (azimuth) in pixels.
+        ly (int): size of the filter in y direction (elevation) in pixels.
+        plot (boolean): if True, plots the generated gabor filter.
 
-def makeGaborFilter(i, j, angle, sigma, phase, f=0.4, lx=54, ly=135, plot=False, freq=True):
+    Returns:
+        gabor filter as np.ndarray of shape (lx, ly) with a gabor kernel centered on (i, j) with the given parameters
+    """
     backgrd=np.zeros((lx, ly))
-    if freq:
-        gk = gabor_kernel(frequency=f, theta=angle, sigma_x=sigma, sigma_y=sigma, offset=phase)
-    else:
+    
+    if frequency is None:
         gk = gabor_kernel(frequency=(-0.016*sigma)+0.148, theta=angle, sigma_x=sigma, sigma_y=sigma,offset=phase)
+    else:
+        gk = gabor_kernel(frequency=frequency, theta=angle, sigma_x=sigma, sigma_y=sigma, offset=phase)
+
     # plt.figure()
     # plt.imshow(gk.real)
     #
@@ -47,7 +69,7 @@ def makeGaborFilter(i, j, angle, sigma, phase, f=0.4, lx=54, ly=135, plot=False,
     if plot:
         plt.figure()
         plt.rcParams['axes.facecolor'] = 'none'
-        plt.imshow(backgrd.T, cmap='Greys')
+        plt.imshow(backgrd.T, cmap='Greys', vmin=0)
     return backgrd.T.astype('float16')
 
 
@@ -64,30 +86,29 @@ def makeFilterLibrary2(xs, ys, thetas, sigmas, offsets, frequencies):
     library=[]
     lx=xs.shape[0]
     ly=ys.shape[0]
-    for x in xs:
-        print(x)
+    for x in tqdm(xs):
         for y in ys:
             for t in thetas:
                 for s in sigmas:
                     for f in frequencies:
                         for o in offsets:
-                            library.append( makeGaborFilter(x, y, t, s, o, f, lx=lx, ly=ly, freq=True))
+                            library.append( makeGaborFilter(x, y, t, s, o, f, lx=lx, ly=ly))
 
     library=np.array(library)
-    return library.reshape((lx, ly, thetas.shape[0], sigmas.shape[0], frequencies.shape[0], offsets.shape[0], -1))
+    return library.reshape((lx, ly, len(thetas), len(sigmas), len(frequencies), len(offsets), -1))
 
-def makeFilterLibrary(xs, ys, thetas, sigmas, offsets, f, freq=True):
+
+def makeFilterLibrary(xs, ys, thetas, sigmas, offsets, f):
     """
     builds the Gabor library
 
     Parameters:
-        thetas (int): number of orientatuion equally spaced between 0 and 180 degree.
-    	Sigmas (list): standart deviation of theb gabor filters expressed in pixels (radius of the gaussian half peak wigth).
-    	f (list): spatial frequencies expressed in pixels per cycles.
-    	offsets (list): 0 and pi/2.
-    	xs (int): number of azimuth positions (pix) (x shape of the downsampled stimuli).
+        xs (int): number of azimuth positions (pix) (x shape of the downsampled stimuli).
     	ys (int): number of elevation positions (pix) (y shape of the downsampled stimuli).
-    	freq (boolean): if True the, takes into account the frequencies list to generate the gabors filters, if False, there is a linear relationship between the size and the spatial frequencies as found in ref paper
+        thetas (int): number of orientatuion equally spaced between 0 and 180 degree.
+    	sigmas (np.array): standart deviation of theb gabor filters expressed in pixels (radius of the gaussian half peak wigth).
+    	f (list): spatial frequencies expressed in pixels per cycles.
+    	offsets (list): List of phase offsets in range of [0, pi/2].
 
     Returns:
         npy file containing all the generated gabor filters of shape (nx, ny, n_orientation, n_sizes, n_freq (if defined independantly from sizes, n_phases, nx*ny))
@@ -95,20 +116,18 @@ def makeFilterLibrary(xs, ys, thetas, sigmas, offsets, f, freq=True):
     library=[]
     lx=xs.shape[0]
     ly=ys.shape[0]
-    for x in xs:
-        print(x)
+    for x in tqdm(xs):
         for y in ys:
             for t in thetas:
                 for s in sigmas:
                     for o in offsets:
-                        library.append( makeGaborFilter(x, y, t, s, o, f, lx=lx, ly=ly, freq=freq))
+                        library.append( makeGaborFilter(x, y, t, s, o, f, lx=lx, ly=ly))
 
     library=np.array(library)
-    return library.reshape((lx, ly, thetas.shape[0], sigmas.shape[0], offsets.shape[0], -1))
+    return library.reshape((lx, ly, len(thetas), len(sigmas), len(offsets), -1))
 
 
 
-import itertools
 def makeFilterLibrary3D(xs, ys, thetas, sigmas, offsets, f, tp_w,  alpha1, alpha2, filename):
     # library=[]
     lx = xs.shape[0]
@@ -133,7 +152,8 @@ def makeFilterLibrary3D(xs, ys, thetas, sigmas, offsets, f, tp_w,  alpha1, alpha
 
 
 def waveletTransform(frame,phase, L):
-    output=L[:, :, :,phase]@torch.Tensor(frame.flatten()).cuda()
+    # output=L[:, :, :,phase]@torch.Tensor(frame.flatten()).cuda()
+    output=L[:, :, :, :, phase]@torch.Tensor(frame.flatten()).cuda() # TODO MR test
     # output=torch.sum(output, axis=(0, 1))
     return output.detach().cpu().numpy()
 
@@ -158,7 +178,6 @@ def getWTfromNPY(videodata, waveletLibrary, phase):
     WT = []
     l = torch.Tensor(waveletLibrary).cuda()
     for i, frame in enumerate(videodata):
-        print(i)
         wt = waveletTransform(frame, phase, l)
         torch.cuda.empty_cache()
         WT.append(wt)
@@ -170,13 +189,10 @@ def getWTfromNPY(videodata, waveletLibrary, phase):
     return WT
 
 
-
-
 def getWTfromNPY3D(videodata, waveletLibrary, tp_w):
     WT = []
     l = torch.Tensor(waveletLibrary).cuda()
     for i in range(tp_w, videodata.shape[0]):
-        print(i)
         wt = waveletTransform3D(videodata[i-tp_w:i], l)
         torch.cuda.empty_cache()
         WT.append(wt)
@@ -186,10 +202,6 @@ def getWTfromNPY3D(videodata, waveletLibrary, tp_w):
     # del l
     # gc.collect()
     return WT
-
-
-
-
 
 
 def downsample_video_binary(path, visual_coverage, analysis_coverage, shape=(54, 135), chunk_size=1000,ratios=(1, 1)):
@@ -291,16 +303,17 @@ def downsample_video_uint(path, shape=(54, 135), chunk_size=1000):
     gc.collect()
     # video_bin=video
     frames = []
-    for i in range(nb_chunks):
-        print(i)
+    for i in tqdm(range(nb_chunks)):
+        # print(i)
         video_bin = skimage.transform.resize(video[i * chunk_size:(i + 1) * chunk_size], (chunk_size, shape[0], shape[1]))  # 137
         frames.append(video_bin)
         del video_bin
         gc.collect()
     video_downsampled = np.concatenate(frames, axis=0)
-    np.save(path[:-4]+'_downsampled.npy', video_downsampled)
+    np.save(path[:-4]+f'_downsampled__{shape[0]}_{shape[1]}.npy', video_downsampled)
 
-def waveletDecomposition(videodata, phase, sigmas, folder_path, library_path='/media/sophie/Expansion1/UCL/datatest/gabors_library.npy'):
+
+def waveletDecomposition(videodata, phase, sigmas, folder_path, library_path):
     """
     Runs the wavelet decomposition
 
@@ -316,11 +329,13 @@ def waveletDecomposition(videodata, phase, sigmas, folder_path, library_path='/m
     """
     L = np.load(library_path)
     WT = []
-    for s, ss in enumerate(sigmas):
+    for s, ss in tqdm(enumerate(sigmas), total=len(sigmas)):
         l = L[:, :, :, s]
         wt = getWTfromNPY(videodata, l, phase)
         WT.append(wt)
     WT = np.array(WT)
     WT = np.moveaxis(WT, 0, 4)
-    np.save(folder_path+'/dwt_videodata_'+str(phase)+'.npy', WT)
+
+    filename = f'dwt_videodata_{phase}.npy'
+    np.save(os.path.join(folder_path, filename), WT)
 

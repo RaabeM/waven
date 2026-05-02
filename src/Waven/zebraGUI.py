@@ -9,7 +9,7 @@ import os
 from .WaveletGenerator import *
 from .LoadPinkNoise import *
 from .Analysis_Utils import *
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+# from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import sys
 
 
