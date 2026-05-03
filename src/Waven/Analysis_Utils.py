@@ -129,6 +129,67 @@ def orientation_correction_for_stretches(visual_coverage, nx, ny, omax):
     corrected_ori[np.asarray(corrected_ori<0).nonzero()[0]]=corrected_ori[corrected_ori<0]+180
     return corrected_ori
 
+def _row_normalize(mat):
+    """Row-wise mean-center and L2-normalize; returns a new float32 tensor."""
+    mat = mat - mat.mean(dim=1, keepdim=True)
+    norms = mat.norm(dim=1, keepdim=True).clamp(min=1e-8)
+    return mat / norms
+
+
+def _pearson_cross_corr_chunked(Z_stim, Z_resp, device, safety_factor=0.8):
+    """
+    Compute the (n_neurons, n_features) Pearson cross-correlation matrix
+    without materializing the full (n_features+n_neurons)^2 corrcoef matrix.
+
+    Automatically tiles the computation to fit available GPU memory.
+    Falls back gracefully to CPU-only computation if no CUDA is present.
+
+    Z_stim : (n_features, n_timepoints) row-normalised float32 CPU tensor
+    Z_resp  : (n_neurons,  n_timepoints) row-normalised float32 CPU tensor
+    """
+    n_features, T = Z_stim.shape
+    n_neurons = Z_resp.shape[0]
+    bpf = 4  # bytes per float32
+
+    if not torch.cuda.is_available():
+        return (Z_resp @ Z_stim.T).numpy()
+
+    free_mem = int(torch.cuda.get_device_properties(device).total_memory * safety_factor)
+    stim_mem = n_features * T * bpf
+
+    rfs = np.empty((n_neurons, n_features), dtype=np.float32)
+
+    if stim_mem <= free_mem // 2:
+        # Stim fits; keep it on GPU and chunk only over neurons.
+        Z_stim_gpu = Z_stim.to(device)
+        remaining = free_mem - stim_mem
+        bn = max(1, int(remaining / ((T + n_features) * bpf)))
+        bn = min(bn, n_neurons)
+        for i in range(0, n_neurons, bn):
+            chunk = Z_resp[i:i + bn].to(device)
+            rfs[i:i + bn] = (chunk @ Z_stim_gpu.T).cpu().numpy()
+            del chunk
+        del Z_stim_gpu
+    else:
+        # Chunk over both axes using square tiles.
+        # Memory per tile: (bn + bf)*T*bpf + bn*bf*bpf  ≤  free_mem
+        # Square tile side B: B^2 + 2*T*B - free_mem/bpf = 0
+        B = int((-2 * T + (4 * T ** 2 + free_mem / bpf) ** 0.5) / 2)
+        B = max(1, B)
+        bn = min(B, n_neurons)
+        bf = min(B, n_features)
+        for ni in range(0, n_neurons, bn):
+            Z_resp_chunk = Z_resp[ni:ni + bn].to(device)
+            for fi in range(0, n_features, bf):
+                Z_stim_chunk = Z_stim[fi:fi + bf].to(device)
+                rfs[ni:ni + bn, fi:fi + bf] = (Z_resp_chunk @ Z_stim_chunk.T).cpu().numpy()
+                del Z_stim_chunk
+            del Z_resp_chunk
+
+    torch.cuda.empty_cache()
+    return rfs
+
+
 def PearsonCorrelationPinkNoise(stim, resp, neuron_pos,  nx, ny, n_thetas, ns, n_frequencies, visual_coverage, screen_ratio, sigmas, fil=[0], absolute=False,  plotting=False):
     """
     Runs Pearson corrrlation between the wavelet decomposition and the neurons spikes
@@ -148,21 +209,18 @@ def PearsonCorrelationPinkNoise(stim, resp, neuron_pos,  nx, ny, n_thetas, ns, n
         tuple : (receptive field matrix (nb_neurons * nx, ny, no, ns), 
             best gabor params for each neurons (list shape 4(nx, ny, no, ns)* nb_neurons), best gabor with units in visual degree, max values array)
     """
-    stim_flat = np.asarray(stim).reshape(stim.shape[0], -1)
-    resp_arr = np.asarray(resp)
-    n_features = stim_flat.shape[1]
-    combined = torch.as_tensor(
-        np.concatenate((stim_flat.T, resp_arr.T), axis=0), dtype=torch.float32)
-    try:
-        cc_f_1 = torch.corrcoef(combined.cuda())
-    except RuntimeError:
-        torch.cuda.empty_cache()
-        cc_f_1 = torch.corrcoef(combined.cuda())
-    print('cc_f_1', cc_f_1.shape)
-    cc_f_1 = cc_f_1.detach().cpu().numpy()
+    stim_np = np.asarray(stim).reshape(stim.shape[0], -1)  # (T, n_features)
+    resp_np = np.asarray(resp)                               # (T, n_neurons)
+    n_features = stim_np.shape[1]
+
+    Z_stim = _row_normalize(torch.as_tensor(stim_np.T, dtype=torch.float32))  # (n_features, T)
+    Z_resp = _row_normalize(torch.as_tensor(resp_np.T, dtype=torch.float32))  # (n_neurons,  T)
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    rfs = _pearson_cross_corr_chunked(Z_stim, Z_resp, device)
+
     if absolute:
-        cc_f_1 = abs(cc_f_1)
-    rfs = cc_f_1[n_features:, :n_features]
+        rfs = np.abs(rfs)
     rfs = rfs - (rfs >= 0.99).astype('float16')
     rfs = np.nan_to_num(rfs)
     print(rfs.shape)
