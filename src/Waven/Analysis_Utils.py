@@ -148,32 +148,21 @@ def PearsonCorrelationPinkNoise(stim, resp, neuron_pos,  nx, ny, n_thetas, ns, n
         tuple : (receptive field matrix (nb_neurons * nx, ny, no, ns), 
             best gabor params for each neurons (list shape 4(nx, ny, no, ns)* nb_neurons), best gabor with units in visual degree, max values array)
     """
+    stim_flat = np.asarray(stim).reshape(stim.shape[0], -1)
+    resp_arr = np.asarray(resp)
+    n_features = stim_flat.shape[1]
+    combined = torch.as_tensor(
+        np.concatenate((stim_flat.T, resp_arr.T), axis=0), dtype=torch.float32)
     try:
-        # cc_f_1 = torch.corrcoef(torch.Tensor(np.concatenate((np.abs(stim.reshape(stim.shape[0], -1)).T, resp.T),axis=0).astype('float16')).cuda())  # , dtype='float16')
-        cc_f_1 = torch.corrcoef(torch.Tensor(
-            torch.concatenate((stim.reshape(stim.shape[0], -1).T, resp.T), axis=0)).cuda())  # , dtype='float16')
-    except:
+        cc_f_1 = torch.corrcoef(combined.cuda())
+    except RuntimeError:
         torch.cuda.empty_cache()
-        stim = torch.Tensor(stim)
-        resp = torch.Tensor(resp)
-        cc_f_1 = torch.corrcoef(
-            torch.Tensor(torch.concatenate((stim.reshape(stim.shape[0], -1).T, resp.T), axis=0)).cuda())
-
-    # try:
-        # cc_f_1 = torch.corrcoef(torch.Tensor(np.concatenate((np.abs(stim.reshape(stim.shape[0], -1)).T, resp.T),axis=0).astype('float16')).cuda())  # , dtype='float16')
-    # cc_f_1 = torch.corrcoef(torch.Tensor(np.concatenate((stim.reshape(stim.shape[0], -1).T, resp.T),axis=0)).cuda())# , dtype='float16')
-    # except:
-    #     print('cpu')
-    #     torch.cuda.empty_cache()
-    #     stim=torch.Tensor(stim)
-    #     resp = torch.Tensor(resp)
-    #     cc_f_1 = torch.corrcoef(
-    #         torch.Tensor(torch.concatenate((stim.reshape(stim.shape[0], -1).T, resp.T), axis=0)).cuda())
+        cc_f_1 = torch.corrcoef(combined.cuda())
     print('cc_f_1', cc_f_1.shape)
     cc_f_1 = cc_f_1.detach().cpu().numpy()
     if absolute:
         cc_f_1 = abs(cc_f_1)
-    rfs = cc_f_1[stim.shape[1]:, :stim.shape[1]]
+    rfs = cc_f_1[n_features:, :n_features]
     rfs = rfs - (rfs >= 0.99).astype('float16')
     rfs = np.nan_to_num(rfs)
     print(rfs.shape)
@@ -185,17 +174,16 @@ def PearsonCorrelationPinkNoise(stim, resp, neuron_pos,  nx, ny, n_thetas, ns, n
     maxes = []
     for i in range(rfs.shape[0]):
         idx, m = max_by_index(i, abs(rfs))
-        indices.append([idx[0][0], idx[1][0], idx[2][0], idx[3][0]])#,  idx[4][0]])
+        indices.append([idx[0][0], idx[1][0], idx[2][0], idx[3][0], idx[4][0]])
         maxes.append(m)
 
     indices = np.array(indices)
-    # maxes=np.array(maxes)
     xmax = indices[:, 0]
     ymax = indices[:, 1]
     omax = indices[:, 2]
     smax = indices[:, 3]
-    # dmax = indices[:, 4]
-    maxe=[xmax, ymax, omax, smax]#, dmax]
+    fmax = indices[:, 4]
+    maxe = [xmax, ymax, omax, smax, fmax]
     xM, xm,yM, ym=visual_coverage
     omax_corr=orientation_correction_for_stretches(visual_coverage, nx, ny, omax*22.5)
     xmax_corr=(abs(xmax)*(abs(xm-xM)/nx))+xM

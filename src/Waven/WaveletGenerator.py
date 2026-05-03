@@ -283,7 +283,7 @@ def downsample_video_binary(path, visual_coverage, analysis_coverage, shape=(54,
             print('end of file')
     F=np.array(F)
     print(F.shape)
-    np.save(path[:-4]+'_downsampled.npy', video_downsampled.astype('bool'))
+    np.save(path[:-4]+f'_downsampled__{shape[0]}_{shape[1]}.npy', video_downsampled.astype('bool'))
 
 
 def downsample_video_uint(path, shape=(54, 135), chunk_size=1000):
