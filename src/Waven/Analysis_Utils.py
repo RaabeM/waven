@@ -190,7 +190,7 @@ def _pearson_cross_corr_chunked(Z_stim, Z_resp, device, safety_factor=0.8):
     return rfs
 
 
-def PearsonCorrelationPinkNoise(stim, resp, neuron_pos,  nx, ny, n_thetas, ns, n_frequencies, visual_coverage, screen_ratio, sigmas, fil=[0], absolute=False,  plotting=False):
+def PearsonCorrelationPinkNoise(stim, resp, neuron_pos,  nx, ny, n_thetas, ns, n_frequencies, n_phases, visual_coverage, screen_ratio, sigmas, fil=[0], absolute=False,  plotting=False):
     """
     Runs Pearson corrrlation between the wavelet decomposition and the neurons spikes
 
@@ -209,6 +209,7 @@ def PearsonCorrelationPinkNoise(stim, resp, neuron_pos,  nx, ny, n_thetas, ns, n
         tuple : (receptive field matrix (nb_neurons * nx, ny, no, ns), 
             best gabor params for each neurons (list shape 4(nx, ny, no, ns)* nb_neurons), best gabor with units in visual degree, max values array)
     """
+    shape_stim = stim.shape
     stim_np = np.asarray(stim).reshape(stim.shape[0], -1)  # (T, n_features)
     resp_np = np.asarray(resp)                               # (T, n_neurons)
     n_features = stim_np.shape[1]
@@ -224,7 +225,9 @@ def PearsonCorrelationPinkNoise(stim, resp, neuron_pos,  nx, ny, n_thetas, ns, n
     rfs = rfs - (rfs >= 0.99).astype('float16')
     rfs = np.nan_to_num(rfs)
     print(rfs.shape)
-    rfs = rfs.reshape(rfs.shape[0], nx, ny, n_thetas, ns, n_frequencies)
+    # rfs = rfs.reshape(rfs.shape[0], nx, ny, n_thetas, ns, n_frequencies)
+    rfs = rfs.reshape((rfs.shape[0], *shape_stim[1:]))
+
     # rfs = rfs[:, :, :, :-1, :]
     # rfssum = rfs.sum(axis=4)
 
