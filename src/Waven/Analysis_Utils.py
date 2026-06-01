@@ -130,10 +130,11 @@ def orientation_correction_for_stretches(visual_coverage, nx, ny, omax):
     return corrected_ori
 
 def _row_normalize(mat):
-    """Row-wise mean-center and L2-normalize; returns a new float32 tensor."""
-    mat = mat - mat.mean(dim=1, keepdim=True)
-    norms = mat.norm(dim=1, keepdim=True).clamp(min=1e-8)
-    return mat / norms
+    """Row-wise mean-center and L2-normalize in-place to avoid peak-memory copies."""
+    mat = mat.float().contiguous()
+    mat -= mat.mean(dim=1, keepdim=True)
+    mat /= mat.norm(dim=1, keepdim=True).clamp_(min=1e-8)
+    return mat
 
 
 def _pearson_cross_corr_chunked(Z_stim, Z_resp, device, safety_factor=0.8):
@@ -231,12 +232,19 @@ def PearsonCorrelationPinkNoise(stim, resp, neuron_pos,  nx, ny, n_thetas, ns, n
     # rfs = rfs[:, :, :, :-1, :]
     # rfssum = rfs.sum(axis=4)
 
-    indices = []
-    maxes = []
-    for i in range(rfs.shape[0]):
-        idx, m = max_by_index(i, abs(rfs))
-        indices.append([idx[0][0], idx[1][0], idx[2][0], idx[3][0], idx[4][0]])
-        maxes.append(m)
+    # MR: very inefficient implementaton for large arrays -> move to vectorized version
+    # indices = []
+    # maxes = []
+    # for i in range(rfs.shape[0]):
+    #     idx, m = max_by_index(i, abs(rfs))
+    #     indices.append([idx[0][0], idx[1][0], idx[2][0], idx[3][0], idx[4][0]])
+    #     maxes.append(m)
+
+    rfs_abs = np.abs(rfs)                                      # one pass
+    flat    = rfs_abs.reshape(rfs.shape[0], -1)                # (n_units, n_features)
+    argmax  = np.argmax(flat, axis=1)                          # (n_units,) flat indices
+    indices = np.stack(np.unravel_index(argmax, rfs.shape[1:]), axis=1)  # (n_units, 5)
+    maxes   = flat[np.arange(flat.shape[0]), argmax]           # (n_units,)
 
     indices = np.array(indices)
     xmax = indices[:, 0]
